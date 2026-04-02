@@ -1,0 +1,58 @@
+# =============================================================
+#  .gitignore — AI News Collector
+# =============================================================
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# ── Ambiente virtual ──────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Configuração local (nunca commitar secrets) ───────────────
+.env
+# .env.exemplo é commitado intencionalmente como template
+
+# ── Banco de dados (dados do usuário) ────────────────────────
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.sqlite
+
+# ── Exports gerados (conteúdo pessoal/temporário) ────────────
+exports/*
+!exports/.gitkeep
+
+# ── Logs ─────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Playwright ───────────────────────────────────────────────
+.playwright/
+
+# ── IDEs e editores ──────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Sistema operacional ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Claude Code (sessão local do agente) ─────────────────────
+.claude/
