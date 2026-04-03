@@ -165,7 +165,8 @@ def export_markdown(date_str: str, output_dir: Path, db_path: Path = DB_PATH) ->
     """
     noticias = get_news_by_date(date_str, db_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f"{date_str}.md"
+    hora = datetime.datetime.now().strftime("%H-%M")
+    output_file = output_dir / f"{date_str}_{hora}.md"
 
     # Cabecalho — data formatada em PT-BR
     try:

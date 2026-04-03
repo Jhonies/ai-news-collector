@@ -32,7 +32,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 import requests
 from bs4 import BeautifulSoup
 import trafilatura
-from playwright.async_api import async_playwright, Page, Browser
+from playwright.async_api import async_playwright, Page, Browser, TimeoutError as PlaywrightTimeoutError
 
 # Modulos locais
 sys.path.insert(0, str(Path(__file__).parent))
@@ -100,7 +100,12 @@ def _parsear_data_publicacao(tag) -> datetime.datetime | None:
         pass
     # ISO 8601 — usado em <published>/<updated> do Atom
     try:
-        return datetime.datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        dt = datetime.datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        # Feeds sem offset (ex: "2026-04-01T10:00:00") retornam datetime naive;
+        # assume UTC para permitir comparacao com limite (que e timezone-aware)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt
     except Exception:
         pass
     return None
@@ -195,12 +200,12 @@ async def extrair_conteudo_playwright(url: str, browser: Browser) -> str | None:
                 "article, main, [class*='content'], [class*='article']",
                 timeout=5_000
             )
-        except TimeoutError:
+        except PlaywrightTimeoutError:
             pass  # Pagina sem seletor obvio — continua com o HTML completo
 
         html = await page.content()
 
-    except TimeoutError:
+    except PlaywrightTimeoutError:
         logger.warning("[WARN] Timeout ao renderizar %s", url)
         return None
     except Exception as exc:
