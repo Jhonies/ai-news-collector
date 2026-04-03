@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from email.utils import parsedate_to_datetime
 import logging
 import os
 import sys
@@ -47,6 +48,7 @@ OLLAMA_MODEL  = os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
 DB_FILE       = Path(os.getenv("DB_PATH", str(DB_PATH)))
 EXPORTS_DIR   = Path(__file__).parent.parent / "exports"
 MAX_NOTICIAS  = int(os.getenv("MAX_NOTICIAS", "12"))
+DIAS_RECENTES = int(os.getenv("DIAS_RECENTES", "3"))  # Ignora artigos mais antigos que N dias
 LOG_LEVEL     = os.getenv("LOG_LEVEL", "INFO")
 
 logging.basicConfig(
@@ -86,10 +88,30 @@ RSS_HEADERS = {
 #  ETAPA 1 — COLETA DE LINKS VIA RSS
 # ──────────────────────────────────────────
 
+def _parsear_data_publicacao(tag) -> datetime.datetime | None:
+    """Parseia tag de data RSS (RFC 2822) ou Atom (ISO 8601). Retorna None se falhar."""
+    if not tag:
+        return None
+    texto = tag.get_text(strip=True)
+    # RFC 2822 — usado em <pubDate> do RSS
+    try:
+        return parsedate_to_datetime(texto)
+    except Exception:
+        pass
+    # ISO 8601 — usado em <published>/<updated> do Atom
+    try:
+        return datetime.datetime.fromisoformat(texto.replace("Z", "+00:00"))
+    except Exception:
+        pass
+    return None
+
+
 def coletar_links_rss(feed_url: str) -> list[dict]:
     """
-    Parseia um feed RSS/Atom e retorna lista de dicts:
+    Parseia um feed RSS/Atom e retorna lista de dicts com artigos recentes:
     {"titulo": str, "url": str, "fonte": str}
+
+    Ignora artigos publicados ha mais de DIAS_RECENTES dias.
     """
     try:
         resp = requests.get(feed_url, headers=RSS_HEADERS, timeout=15)
@@ -102,8 +124,10 @@ def coletar_links_rss(feed_url: str) -> list[dict]:
         return []
 
     soup = BeautifulSoup(resp.content, "xml")
-
     fonte = urlparse(feed_url).netloc.replace("www.", "").replace("feeds.", "")
+
+    agora = datetime.datetime.now(tz=datetime.timezone.utc)
+    limite = agora - datetime.timedelta(days=DIAS_RECENTES)
 
     itens: list[dict] = []
     for item in soup.find_all(["item", "entry"]):
@@ -113,11 +137,19 @@ def coletar_links_rss(feed_url: str) -> list[dict]:
         if not titulo_tag or not link_tag:
             continue
 
-        url = link_tag.get("href") or link_tag.get_text(strip=True)
+        url    = link_tag.get("href") or link_tag.get_text(strip=True)
         titulo = titulo_tag.get_text(strip=True)
 
-        if url and titulo:
-            itens.append({"titulo": titulo, "url": url.strip(), "fonte": fonte})
+        if not url or not titulo:
+            continue
+
+        # Filtra artigos mais antigos que DIAS_RECENTES
+        data_tag = item.find(["pubDate", "published", "updated"])
+        data_pub = _parsear_data_publicacao(data_tag)
+        if data_pub and data_pub < limite:
+            continue
+
+        itens.append({"titulo": titulo, "url": url.strip(), "fonte": fonte})
 
     return itens
 
@@ -125,6 +157,17 @@ def coletar_links_rss(feed_url: str) -> list[dict]:
 # ──────────────────────────────────────────
 #  ETAPA 2 — EXTRACAO VIA PLAYWRIGHT + TRAFILATURA
 # ──────────────────────────────────────────
+
+# Frases que indicam pagina de challenge de bot (Cloudflare, Akamai, etc.)
+_BOT_CHALLENGE_MARKERS = frozenset([
+    "enable javascript and cookies to continue",
+    "verification successful",
+    "just a moment",
+    "checking your browser before accessing",
+    "ddos protection by cloudflare",
+    "please wait while we verify",
+])
+
 
 async def extrair_conteudo_playwright(url: str, browser: Browser) -> str | None:
     """
@@ -174,7 +217,17 @@ async def extrair_conteudo_playwright(url: str, browser: Browser) -> str | None:
         favor_recall=True,
     )
 
-    return texto or None
+    if not texto:
+        return None
+
+    # Detecta paginas de challenge de bot: conteudo muito curto com frases conhecidas
+    if len(texto) < 500:
+        texto_lower = texto.lower()
+        if any(marker in texto_lower for marker in _BOT_CHALLENGE_MARKERS):
+            logger.warning("[WARN] Pagina de verificacao de bot detectada, pulando: %s", url[:70])
+            return None
+
+    return texto
 
 
 # ──────────────────────────────────────────

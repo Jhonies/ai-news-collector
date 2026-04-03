@@ -135,7 +135,7 @@ def gerar_resumo(
         return {"summary": "Timeout ao gerar resumo.", "headline": titulo}
     except requests.RequestException as exc:
         logger.error("[ERROR] Falha de rede com Ollama: %s", exc)
-        return {"summary": f"Erro de rede: {exc}", "headline": titulo}
+        return {"summary": "Resumo indisponivel (falha na comunicacao com Ollama).", "headline": titulo}
     except json.JSONDecodeError as exc:
         logger.warning("[WARN] Resposta do Ollama nao e JSON valido: %s", exc)
         return {"summary": resposta_raw[:800], "headline": titulo}
